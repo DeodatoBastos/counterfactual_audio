@@ -26,32 +26,30 @@ all_data = []
 for mapping in dataset_mappings:
     json_path = mapping["json_path"]
     audio_dir = mapping["audio_dir"]
-    
+
     if not os.path.exists(json_path):
         print(f"Warning: {json_path} not found. Skipping.")
         continue
-        
+
     with open(json_path, 'r', encoding='utf-8') as f:
         data = json.load(f)
-        
-    # Process each audio record in the JSON array
+
     for item in data:
-        # Extract the base filename (e.g., "development/audio/file.wav" -> "file.wav")
         if 'path' in item:
             file_name = os.path.basename(item['path'])
         else:
             continue
-            
+
         audio_path = os.path.join(audio_dir, file_name)
-        
+
         # Datasets like Clotho contain multiple captions per audio file.
         # We need to flatten them so each (caption, counterfactual) pair gets its own row.
         captions = item.get('captions', [])
         counterfactuals = item.get('captions_counterfactual', [])
-        
+
         # Ensure we only iterate up to the matching number of pairs available
         num_pairs = min(len(captions), len(counterfactuals))
-        
+
         for i in range(num_pairs):
             all_data.append({
                 'audio_path': audio_path,
@@ -60,10 +58,7 @@ for mapping in dataset_mappings:
             })
 
 if all_data:
-    # 3. Combine all flattened records into a single DataFrame
     author_data = pd.DataFrame(all_data)
-
-    # 4. Save the formatted metadata for dataset.py
     author_data.to_csv("./data/metadata.csv", index=False)
     print(f"Successfully generated metadata.csv with {len(author_data)} pairs.")
 else:
@@ -72,16 +67,13 @@ else:
 
 csv_path = "./data/CLOTHO_v2.1/clotho_csv_files/clotho_captions_evaluation.csv"
 audio_dir = "./data/CLOTHO_v2.1/clotho_audio_files/eval"
-
-
 if os.path.exists(csv_path):
     df = pd.read_csv(csv_path)
     all_eval_data = []
-    
-    # Iterate over the 1044 test samples
+
     for _, row in df.iterrows():
         audio_path = os.path.join(audio_dir, row['file_name'])
-        
+
         # Each audio file has 5 ground-truth captions
         for i in range(1, 6):
             caption = row.get(f'caption_{i}')
@@ -94,7 +86,7 @@ if os.path.exists(csv_path):
                     # The train.py evaluation loop ignores this column completely.
                     'counterfactual': caption 
                 })
-                
+
     eval_df = pd.DataFrame(all_eval_data)
     eval_df.to_csv("./data/clotho_eval_metadata.csv", index=False)
     print(f"Successfully generated clotho_eval_metadata.csv with {len(eval_df)} pairs.")

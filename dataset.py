@@ -79,7 +79,7 @@ if __name__ == "__main__":
     # Expected CSV structure:
     # audio_path,caption,counterfactual
     # data/audio1.wav,"A dog is barking.","A cat is meowing."
-    dataset = CounterfactualAudioDataset("path/to/metadata.csv")
+    dataset = CounterfactualAudioDataset("./data/metadata.csv")
 
     log_mel_spec, caption, counterfactual = dataset[0]
 

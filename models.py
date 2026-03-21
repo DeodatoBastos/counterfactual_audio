@@ -13,7 +13,6 @@ class AudioEncoder(nn.Module):
     """
     def __init__(self, embedding_dim=512):
         super().__init__()
-        # Load a standard pretrained ResNet
         self.base = models.resnet34(weights=models.ResNet34_Weights.DEFAULT)
 
         # Modify the first convolutional layer to accept 1-channel Log-Mel Spectrograms
@@ -47,7 +46,6 @@ class AudioTextCounterfactualModel(nn.Module):
         super().__init__()
         self.audio_encoder = AudioEncoder(embedding_dim=512)
 
-        # Load HuggingFace CLIP Text Encoder
         self.tokenizer = CLIPTokenizer.from_pretrained(clip_model_name)
         self.text_encoder = CLIPTextModel.from_pretrained(clip_model_name)
 
@@ -68,10 +66,8 @@ class AudioTextCounterfactualModel(nn.Module):
             return_tensors="pt"
         ).to(device)
 
-        # Forward pass through frozen CLIP model
         with torch.no_grad():
             outputs = self.text_encoder(**inputs)
 
-        # Extract the pooled text embeddings and L2 Normalize
         text_embeds = outputs.pooler_output
         return F.normalize(text_embeds, p=2, dim=-1)

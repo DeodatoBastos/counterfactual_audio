@@ -1,11 +1,9 @@
 import torchaudio
 
-# --- [HOTFIX] Monkey-patch for torchaudio>=2.2.0 (Python 3.12 compatibility) ---
 # aac-datasets attempts to import AudioMetaData for type hinting, but it was 
 # removed in newer versions of PyTorch. This dummy class safely bypasses the crash.
 if not hasattr(torchaudio, 'AudioMetaData'):
     torchaudio.AudioMetaData = type('AudioMetaData', (), {})
-# -------------------------------------------------------------------------------
 
 from aac_datasets import Clotho, AudioCaps, MACS
 
@@ -29,9 +27,7 @@ audiocaps_train = AudioCaps(
     download=True,
     ytdlp_opts=[
         "--cookies", "cookies.txt",
-        # Use 'tv' client to bypass the "Only images are available" extraction bug
         "--extractor-args", "youtube:player_client=tv",
-        # Add a delay between requests to avoid HTTP 400 Soft-Bans on your IP
         "--sleep-requests", "1",
         "--ignore-errors"
     ]
