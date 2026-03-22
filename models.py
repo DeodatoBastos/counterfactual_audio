@@ -1,5 +1,6 @@
 import torch
 import torch.nn as nn
+from torch import Tensor
 import torch.nn.functional as F
 from transformers import CLIPTokenizer, CLIPTextModel
 
@@ -51,7 +52,7 @@ class AudioEncoder(nn.Module):
         
         # We don't use the final AudioSet classifier, so it shouldn't track gradients
         self.base.fc_audioset.requires_grad_(False)
-    def forward(self, waveform):
+    def forward(self, waveform: Tensor) -> Tensor:
         # Input shape: (Batch_size, Audio_length)
 
         # The PANNs forward pass returns a dictionary.
@@ -80,10 +81,10 @@ class AudioTextCounterfactualModel(nn.Module):
         for param in self.text_encoder.parameters():
             param.requires_grad = False
 
-    def encode_audio(self, audio):
+    def encode_audio(self, audio: Tensor) -> Tensor:
         return self.audio_encoder(audio)
 
-    def encode_text(self, text_list, device):
+    def encode_text(self, text_list: list[str], device: torch.device) -> Tensor:
         # Tokenize the batch of raw string captions
         inputs = self.tokenizer(
             text_list, 

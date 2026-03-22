@@ -1,9 +1,11 @@
+import random
+
+import pandas as pd
+
 import torch
 import torchaudio
-import pandas as pd
-import random
-from torch.utils.data import Dataset
 import torch.nn.functional as F
+from torch.utils.data import Dataset
 
 
 class CounterfactualAudioDataset(Dataset):
@@ -29,7 +31,7 @@ class CounterfactualAudioDataset(Dataset):
     def __len__(self):
         return len(self.metadata)
 
-    def __getitem__(self, idx):
+    def __getitem__(self, idx: int):
         """
         Retrieves the raw audio waveform, original caption, and counterfactual caption.
         """
@@ -98,7 +100,7 @@ class CounterfactualAudioDatasetMel(Dataset):
     def __len__(self):
         return len(self.metadata)
 
-    def __getitem__(self, idx):
+    def __getitem__(self, idx: int):
         row = self.metadata.iloc[idx]
         audio_path = row['audio_path']
         caption = row['caption']
@@ -130,6 +132,7 @@ class CounterfactualAudioDatasetMel(Dataset):
         log_mel_spec = self.amplitude_to_db(mel_spec)
 
         return log_mel_spec, caption, counterfactual
+
 
 # ==========================================
 # Usage Example
