@@ -41,31 +41,27 @@ if __name__ == "__main__":
     resume_checkpoint = args.checkpoint
 
     train_dataset = CounterfactualAudioDataset("data/metadata.csv")
-    test_dataset = CounterfactualAudioDataset("data/clotho_eval_metadata.csv") 
-
     train_loader = DataLoader(train_dataset, batch_size=bs, shuffle=True, num_workers=args.num_workers, pin_memory=True, persistent_workers=True)
-    test_loader = DataLoader(test_dataset, batch_size=bs, shuffle=False, num_workers=args.num_workers)
 
     model = AudioTextCounterfactualModel().to(device)
     criterion = CounterfactualLoss(margin=0.1, w1=w1, w2=w2)
-
     optimizer = torch.optim.AdamW(model.audio_encoder.parameters(), lr=lr)
-    scaler = torch.GradScaler(device_type)
 
     start_epoch = 0
     if resume_checkpoint and os.path.exists(resume_checkpoint):
-        print(f"Loading checkpoint '{resume_checkpoint}'...")
+        print(f"Loading checkpoint '{resume_checkpoint}'.")
         checkpoint = torch.load(resume_checkpoint, map_location=device)
         model.audio_encoder.load_state_dict(checkpoint['model_state_dict'])
         optimizer.load_state_dict(checkpoint['optimizer_state_dict'])
-        if 'scaler_state_dict' in checkpoint:
-            scaler.load_state_dict(checkpoint['scaler_state_dict'])
         start_epoch = checkpoint['epoch'] + 1
         print(f"Resumed training from epoch {start_epoch + 1}")
     elif resume_checkpoint:
         print(f"Checkpoint '{resume_checkpoint}' not found. Starting from scratch.")
 
     train(model, optimizer, train_loader, criterion, start_epoch, epochs, device)
+
+    test_dataset = CounterfactualAudioDataset("data/clotho_eval_metadata.csv") 
+    test_loader = DataLoader(test_dataset, batch_size=bs, shuffle=False, num_workers=args.num_workers)
     top1_acc, top10_acc = evaluate_retrieval(model, test_loader, device)
 
     print(f"Top-1 Accuracy: {top1_acc:.4f}")
