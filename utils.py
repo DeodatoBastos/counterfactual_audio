@@ -1,7 +1,9 @@
 from tqdm import tqdm
+import numpy as np
 import torch
 import torch.nn as nn
 from torch import Tensor
+import torch.optim as optim
 from torch.utils.data import DataLoader
 
 from models import AudioTextCounterfactualModel
@@ -38,6 +40,21 @@ class CounterfactualLoss(nn.Module):
         return total_loss, l_angle, l_factual
 
 
+def set_seed(seed=42, deterministic=True):
+    """
+    Sets the random seed for NumPy and PyTorch for exact reproducibility.
+    """
+    np.random.seed(seed)
+    torch.manual_seed(seed)
+    if torch.cuda.is_available():
+        torch.cuda.manual_seed(seed)
+        torch.cuda.manual_seed_all(seed)
+
+        # Force deterministic operations for cuDNN (may slightly impact performance)
+        torch.backends.cudnn.deterministic = deterministic
+        torch.backends.cudnn.benchmark = not deterministic
+
+
 def evaluate_retrieval(model: AudioTextCounterfactualModel, dataloader: DataLoader, device: torch.device) -> tuple[float, float]:
     """
     Evaluates the model on the Language-Based Audio Retrieval task.
@@ -62,34 +79,38 @@ def evaluate_retrieval(model: AudioTextCounterfactualModel, dataloader: DataLoad
     all_audio_embeds = torch.cat(all_audio_embeds, dim=0)
     all_text_embeds = torch.cat(all_text_embeds, dim=0)
 
+    unique_audio_embeds = all_audio_embeds[::5]
+
     # Compute Cosine Similarity Matrix (N_text_queries, N_audio_database)
     # Because vectors are normalized, matrix multiplication yields cosine similarity
-    sim_matrix = torch.matmul(all_text_embeds, all_audio_embeds.T)
+    sim_matrix = torch.matmul(all_text_embeds, unique_audio_embeds.T)
 
-    N = sim_matrix.shape[0]
+    N_queries = sim_matrix.shape[0]
     top1_correct = 0
     top10_correct = 0
 
     # Calculate Top-k Recall
-    for i in range(N):
+    for i in range(N_queries):
         ranked_indices = torch.argsort(sim_matrix[i], descending=True)
 
-        # The correct audio for text query `i` is at index `i`
-        if ranked_indices[0] == i:
+        # Because there are 5 captions per audio, Text Query `i` 
+        # belongs to Unique Audio `i // 5`
+        correct_audio_idx = i // 5
+        if ranked_indices[0] == correct_audio_idx:
             top1_correct += 1
 
-        if i in ranked_indices[:10]:
+        if correct_audio_idx in ranked_indices[:10]:
             top10_correct += 1
 
-    top1_acc = top1_correct / N
-    top10_acc = top10_correct / N
+    top1_acc = top1_correct / N_queries
+    top10_acc = top10_correct / N_queries
 
     return top1_acc, top10_acc
 
 
-def train(model: AudioTextCounterfactualModel, optimizer: torch.optim.Optimizer,
-          train_loader: DataLoader, criterion: CounterfactualLoss, start_epoch: int,
-          epochs: int, device: torch.device):
+def train(model: AudioTextCounterfactualModel, optimizer: optim.Optimizer,
+          scheduler: optim.lr_scheduler.LRScheduler, train_loader: DataLoader,
+          criterion: CounterfactualLoss, start_epoch: int, epochs: int, device: torch.device):
     """Trains the model using the provided DataLoader and loss function.
     Saves checkpoints every 5 epochs and the final model weights at the end.
     """
@@ -113,19 +134,23 @@ def train(model: AudioTextCounterfactualModel, optimizer: torch.optim.Optimizer,
             loss.backward()
             torch.nn.utils.clip_grad_norm_(model.audio_encoder.parameters(), max_norm=1.0)
             optimizer.step()
+            scheduler.step()
 
             total_loss_epoch += loss.item()
-            progress_bar.set_postfix({"Loss": f"{loss.item():.4f}"})
+
+            current_lr = scheduler.get_last_lr()[0]
+            progress_bar.set_postfix({"Loss": f"{loss.item():.4f}", "LR": f"{current_lr:.6f}"})
 
             if batch_idx == len(train_loader) - 1:
                 progress_bar.set_postfix({"Loss": f"{loss.item():.4f}", "Avg Loss": f"{total_loss_epoch/len(train_loader):.4f}"})
 
-        if (epoch + 1) % 5 == 0:  # Save checkpoint every epoch
+        if (epoch + 1) % 5 == 0:
             checkpoint_path = f"models/checkpoint_epoch_{epoch+1}.pth"
             torch.save({
                 'epoch': epoch,
                 'model_state_dict': model.audio_encoder.state_dict(),
                 'optimizer_state_dict': optimizer.state_dict(),
+                'scheduler_state_dict': scheduler.state_dict(),
             }, checkpoint_path)
             print(f"Checkpoint saved at '{checkpoint_path}'")
 
