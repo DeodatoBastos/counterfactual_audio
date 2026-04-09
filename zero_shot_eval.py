@@ -1,94 +1,158 @@
 import os
+import pandas as pd
 import torch
 import torch.nn.functional as F
-import soundata
-import numpy as np
+import torchaudio
 from tqdm import tqdm
-
-# Importation des modèles définis par votre collègue
 from models import AudioTextCounterfactualModel
 
-def run_zero_shot_eval(checkpoint_path, data_home, device):
-    """
-    Exécute l'évaluation Zero-Shot sur UrbanSound8K.
-    """
-    # 1. Chargement du modèle et des poids
-    print(f"Chargement du modèle depuis {checkpoint_path}...")
-    model = AudioTextCounterfactualModel().to(device)
+def get_labels(dataset_name):
+    if dataset_name == 'urbansound8k':
+        return ["air conditioner", "car horn", "children playing", "dog bark", 
+                "drilling", "engine idling", "gunshot", "jackhammer", "siren", "street music"]
+    elif dataset_name == 'esc50':
+        return ["dog", "rooster", "pig", "cow", "frog", "cat", "hen", "insects", "sheep", "crow",
+                "rain", "sea_waves", "crackling_fire", "crickets", "chirping_birds", "water_drops", 
+                "wind", "pouring_water", "toilet_flush", "thunderstorm", "crying_baby", "sneezing", 
+                "clapping", "breathing", "coughing", "footsteps", "laughing", "brushing_teeth", 
+                "snoring", "drinking_sipping", "door_wood_knock", "mouse_click", "keyboard_typing", 
+                "door_wood_creaks", "can_opening", "washing_machine", "vacuum_cleaner", 
+                "clock_tick", "glass_breaking", "helicopter", "chainsaw", "siren", "car_horn", 
+                "engine", "train", "church_bells", "airplane", "fireworks", "hand_saw"]
+    return []
+
+def run_zero_shot_eval(dataset_name, checkpoint_path, data_home, device):
+    print(f"\n--- Évaluation Zero-Shot : {dataset_name} ---")
     
-    # Chargement du dictionnaire d'état (state_dict)
-    # PyTorch gère le dossier extrait comme un fichier unique
+    # Charger le modèle
+    model = AudioTextCounterfactualModel().to(device)
     checkpoint = torch.load(checkpoint_path, map_location=device)
     model.audio_encoder.load_state_dict(checkpoint['model_state_dict'])
     model.eval()
 
-    # 2. Configuration du dataset UrbanSound8K via soundata
-    dataset = soundata.initialize('urbansound8k', data_home=data_home)
-    # Les 10 classes officielles citées dans l'article [cite: 152]
-    us8k_labels = [
-        "air conditioner", "car horn", "children playing", "dog bark", 
-        "drilling", "engine idling", "gunshot", "jackhammer", 
-        "siren", "street music"
-    ]
-    
-    # Encodage des étiquettes de texte (réalisé une seule fois) [cite: 89, 140]
-    print("Encodage des étiquettes de texte...")
+    labels = get_labels(dataset_name)
     with torch.no_grad():
-        label_embeddings = model.encode_text(us8k_labels, device) # (10, 512)
+        label_embeddings = model.encode_text(labels, device)
 
-    # 3. Boucle d'évaluation
-    clips = dataset.load_clips()
-    correct_predictions = 0
-    total_clips = 0
+    # Chargement des métadonnées selon le dataset
+    if dataset_name == 'esc50':
+        csv_path = os.path.join(data_home, "meta", "esc50.csv")
+        audio_dir = os.path.join(data_home, "audio")
+        df = pd.read_csv(csv_path)
+    else: # urbansound8k
+        csv_path = os.path.join(data_home, "metadata", "UrbanSound8K.csv")
+        audio_dir = os.path.join(data_home, "audio")
+        df = pd.read_csv(csv_path)
 
-    print("Début de l'évaluation Zero-Shot...")
-    for clip_id, clip in tqdm(clips.items()):
-        # Chargement de l'audio
-        audio, sr = clip.audio
-        
-        # Prétraitement : Mono et Resampling à 32kHz (comme dans le dataset.py)
-        audio_tensor = torch.from_numpy(audio).float()
-        if audio_tensor.ndim > 1:
-            audio_tensor = audio_tensor.mean(dim=0)
-        
-        # Resampling si nécessaire (PANNs attend 32kHz) [cite: 143]
-        if sr != 32000:
-            import torchaudio.transforms as T
-            resampler = T.Resample(sr, 32000)
-            audio_tensor = resampler(audio_tensor)
-
-        # Troncature/Padding à 10 secondes [cite: 145]
-        max_samples = 32000 * 10
-        if audio_tensor.shape[0] > max_samples:
-            audio_tensor = audio_tensor[:max_samples]
+    correct, total = 0, 0
+    for _, row in tqdm(df.iterrows(), total=len(df)):
+        if dataset_name == 'esc50':
+            file_path = os.path.join(audio_dir, row['filename'])
+            target_label = row['category']
         else:
-            audio_tensor = F.pad(audio_tensor, (0, max_samples - audio_tensor.shape[0]))
+            file_path = os.path.join(audio_dir, f"fold{row['fold']}", row['slice_file_name'])
+            target_label = row['class']
 
-        # Inférence audio
-        with torch.no_grad():
-            audio_embedding = model.encode_audio(audio_tensor.unsqueeze(0).to(device)) # (1, 512)
+        try:
+            waveform, sr = torchaudio.load(file_path)
+            if waveform.shape[0] > 1: waveform = waveform.mean(dim=0, keepdim=True)
+            
+            # Resampling 32kHz & Pad/Truncate 10s
+            if sr != 32000:
+                waveform = torchaudio.transforms.Resample(sr, 32000)(waveform)
+            
+            max_samples = 32000 * 10
+            if waveform.shape[1] > max_samples:
+                waveform = waveform[:, :max_samples]
+            else:
+                waveform = F.pad(waveform, (0, max_samples - waveform.shape[1]))
 
-        # Calcul de la similarité cosinus [cite: 160]
-        # Similarity = (1, 512) @ (512, 10) -> (1, 10)
-        similarities = torch.matmul(audio_embedding, label_embeddings.T)
-        prediction_idx = torch.argmax(similarities, dim=-1).item()
+            with torch.no_grad():
+                audio_embed = model.encode_audio(waveform.to(device))
+            
+            similarities = torch.matmul(audio_embed, label_embeddings.T)
+            pred_idx = torch.argmax(similarities, dim=-1).item()
 
-        # Vérification
-        if us8k_labels[prediction_idx] == clip.class_label:
-            correct_predictions += 1
-        total_clips += 1
+            if labels[pred_idx].replace("_", " ") == target_label.replace("_", " "):
+                correct += 1
+            total += 1
+        except Exception:
+            continue
 
-    accuracy = correct_predictions / total_clips
-    print(f"\nPrécision Top-1 sur UrbanSound8K : {accuracy:.4f}")
+    accuracy = correct / total if total > 0 else 0
+    print(f"\nPrécision pour {dataset_name} : {accuracy:.4f}")
     return accuracy
 
-if __name__ == "__main__":
-    # Configuration des chemins
-    CHECKPOINT = "/content/models/checkpoint_epoch_30"
-    DATA_HOME = "/content/data/urbansound8k"
-    DEVICE = torch.device("cuda" if torch.cuda.is_available() else "cpu")
+import os
+import pandas as pd
+import torch
+import torch.nn.functional as F
+import torchaudio
+from tqdm import tqdm
+import numpy as np
+from models import AudioTextCounterfactualModel
 
-    if not os.path.exists(CHECKPOINT):
-        print(f"Erreur : Checkpoint introuvable à {CHECKPOINT}")
-    else:
-        run_zero_shot_eval(CHECKPOINT, DATA_HOME, DEVICE)
+def run_zero_shot_eval_us8k_rigorous(checkpoint_path, data_home, device):
+    print(f"\n--- Évaluation Rigoureuse UrbanSound8K (10-Fold) ---")
+    
+    # 1. Charger le modèle et les étiquettes
+    model = AudioTextCounterfactualModel().to(device)
+    checkpoint = torch.load(checkpoint_path, map_location=device)
+    model.audio_encoder.load_state_dict(checkpoint['model_state_dict'])
+    model.eval()
+
+    labels = ["air conditioner", "car horn", "children playing", "dog bark", 
+              "drilling", "engine idling", "gunshot", "jackhammer", "siren", "street music"]
+    
+    with torch.no_grad():
+        label_embeddings = model.encode_text(labels, device)
+
+    # 2. Charger les métadonnées
+    df = pd.read_csv(os.path.join(data_home, "metadata", "UrbanSound8K.csv"))
+    audio_dir = os.path.join(data_home, "audio")
+
+    fold_accuracies = []
+
+    # 3. Évaluation par Fold
+    for fold in range(1, 11):
+        fold_df = df[df['fold'] == fold]
+        correct, total = 0, 0
+        
+        print(f"Évaluation du Fold {fold}...")
+        for _, row in tqdm(fold_df.iterrows(), total=len(fold_df), leave=False):
+            file_path = os.path.join(audio_dir, f"fold{fold}", row['slice_file_name'])
+            
+            try:
+                waveform, sr = torchaudio.load(file_path)
+                if waveform.shape[0] > 1: waveform = waveform.mean(dim=0, keepdim=True)
+                if sr != 32000:
+                    waveform = torchaudio.transforms.Resample(sr, 32000)(waveform)
+                
+                max_samples = 32000 * 10
+                waveform = waveform[:, :max_samples] if waveform.shape[1] > max_samples else F.pad(waveform, (0, max_samples - waveform.shape[1]))
+
+                with torch.no_grad():
+                    audio_embed = model.encode_audio(waveform.to(device))
+                
+                sims = torch.matmul(audio_embed, label_embeddings.T)
+                # ... à l'intérieur de la boucle de prédiction ...
+                pred_idx = torch.argmax(sims).item()
+                predicted_label = labels[pred_idx].replace(" ", "_").lower()
+                actual_label = row['class'].lower()
+
+                if predicted_label == actual_label:
+                    correct += 1
+                total += 1
+            except: continue
+
+        acc = correct / total if total > 0 else 0
+        fold_accuracies.append(acc)
+        print(f"Fold {fold} Accuracy: {acc:.4f}")
+
+    # 4. Résultats finaux
+    mean_acc = np.mean(fold_accuracies)
+    std_acc = np.std(fold_accuracies)
+    print(f"\n=====================================")
+    print(f"Moyenne finale (10-fold): {mean_acc:.4f} (+/- {std_acc:.4f})")
+    print(f"=====================================")
+    return mean_acc
