@@ -23,6 +23,7 @@ if __name__ == "__main__":
     arg_parser.add_argument("--num_workers", type=int, default=20, help="Number of workers for DataLoader")
     arg_parser.add_argument("--seed", type=int, default=42, help="Random seed for reproducibility")
     arg_parser.add_argument("--deterministic", type=bool, default=False, help="Use deterministic operations for reproducibility")
+    arg_parser.add_argument("--freeze", type=bool, default=False, help="Freeze all the audio backbone")
     args = arg_parser.parse_args()
 
     print("Args:")
@@ -48,7 +49,7 @@ if __name__ == "__main__":
     train_dataset = CounterfactualAudioDataset("data/metadata.csv")
     train_loader = DataLoader(train_dataset, batch_size=bs, shuffle=True, num_workers=args.num_workers, pin_memory=True, persistent_workers=True)
 
-    model = AudioTextCounterfactualModel().to(device)
+    model = AudioTextCounterfactualModel(freeze=args.freeze).to(device)
     criterion = CounterfactualLoss(margin=0.1, w1=w1, w2=w2)
     optimizer = torch.optim.AdamW(model.audio_encoder.parameters(), lr=lr)
 

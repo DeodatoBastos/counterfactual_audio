@@ -81,14 +81,14 @@ if os.path.exists(csv_path):
                 all_eval_data.append({
                     'audio_path': audio_path,
                     'caption': caption,
-                    # We pass the factual caption as a dummy counterfactual 
+                    # We pass the factual caption as a dummy counterfactual
                     # so the CLIP tokenizer in dataset.py doesn't throw an error.
                     # The train.py evaluation loop ignores this column completely.
-                    'counterfactual': caption 
+                    'counterfactual': caption
                 })
 
     eval_df = pd.DataFrame(all_eval_data)
     eval_df.to_csv("./data/clotho_eval_metadata.csv", index=False)
     print(f"Successfully generated clotho_eval_metadata.csv with {len(eval_df)} pairs.")
 else:
-    print(f"Could not find {csv_path}. Did you run the 'eval' download in Step 2?")
+    print(f"Could not find {csv_path}. Did you run the 'eval' download?")

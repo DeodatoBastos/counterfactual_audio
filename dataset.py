@@ -11,8 +11,8 @@ from torch.utils.data import Dataset
 class CounterfactualAudioDataset(Dataset):
     """
     PyTorch Dataset for loading audio and text pairs for Counterfactual Audio Learning.
-    
-    Updated for PANNs: Returns raw 1D waveforms (32kHz, 10 seconds).
+
+    Returns raw 1D waveforms (32kHz, 10 seconds).
     The PANNs model handles the Mel Spectrogram conversion internally.
     """
     def __init__(self, metadata_path: str, target_sr: int = 32000, duration: int = 10):

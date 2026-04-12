@@ -93,10 +93,10 @@ def evaluate_retrieval(model: AudioTextCounterfactualModel, dataloader: DataLoad
     for i in range(N_queries):
         ranked_indices = torch.argsort(sim_matrix[i], descending=True)
 
-        # Because there are 5 captions per audio, Text Query `i` 
+        # Because there are 5 captions per audio, Text Query `i`
         # belongs to Unique Audio `i // 5`
         correct_audio_idx = i // 5
-        if ranked_indices[0] == correct_audio_idx:
+        if correct_audio_idx == ranked_indices[0]:
             top1_correct += 1
 
         if correct_audio_idx in ranked_indices[:10]:
@@ -142,7 +142,7 @@ def train(model: AudioTextCounterfactualModel, optimizer: optim.Optimizer,
             progress_bar.set_postfix({"Loss": f"{loss.item():.4f}", "LR": f"{current_lr:.6f}"})
 
             if batch_idx == len(train_loader) - 1:
-                progress_bar.set_postfix({"Loss": f"{loss.item():.4f}", "Avg Loss": f"{total_loss_epoch/len(train_loader):.4f}"})
+                progress_bar.set_postfix({"Avg Loss": f"{total_loss_epoch/len(train_loader):.4f}"})
 
         if (epoch + 1) % 5 == 0:
             checkpoint_path = f"models/checkpoint_epoch_{epoch+1}.pth"
