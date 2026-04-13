@@ -9,7 +9,7 @@ from torch.utils.data import DataLoader
 
 from dataset import CounterfactualAudioDataset
 from models import AudioTextCounterfactualModel
-from utils import CounterfactualLoss, train, evaluate_retrieval, set_seed
+from utils import CLAPLoss, CounterfactualLoss, train, evaluate_retrieval, set_seed
 
 
 if __name__ == "__main__":
@@ -24,6 +24,7 @@ if __name__ == "__main__":
     arg_parser.add_argument("--seed", type=int, default=42, help="Random seed for reproducibility")
     arg_parser.add_argument("--deterministic", type=bool, default=False, help="Use deterministic operations for reproducibility")
     arg_parser.add_argument("--freeze", type=bool, default=False, help="Freeze all the audio backbone")
+    arg_parser.add_argument("--mode", type=str, default="counterfactual", help="The loss used to train the model")
     args = arg_parser.parse_args()
 
     print("Args:")
@@ -50,8 +51,15 @@ if __name__ == "__main__":
     train_loader = DataLoader(train_dataset, batch_size=bs, shuffle=True, num_workers=args.num_workers, pin_memory=True, persistent_workers=True)
 
     model = AudioTextCounterfactualModel(freeze=args.freeze).to(device)
-    criterion = CounterfactualLoss(margin=0.1, w1=w1, w2=w2)
-    optimizer = torch.optim.AdamW(model.audio_encoder.parameters(), lr=lr)
+    if args.mode == "baseline":
+        criterion = CounterfactualLoss(margin=0.1, w1=w1, w2=w2).to(device)
+    else:
+        criterion = CLAPLoss().to(device)
+    optimizer = torch.optim.AdamW(
+        list(model.audio_encoder.parameters()) + \
+        list(criterion.parameters()),
+        lr=lr
+    )
 
     total_steps = len(train_loader) * epochs
     scheduler = torch.optim.lr_scheduler.OneCycleLR(
@@ -71,7 +79,7 @@ if __name__ == "__main__":
     elif resume_checkpoint:
         print(f"Checkpoint '{resume_checkpoint}' not found. Starting from scratch.")
 
-    train(model, optimizer, scheduler, train_loader, criterion, start_epoch, epochs, device)
+    train(model, optimizer, scheduler, train_loader, criterion, start_epoch, epochs, device, args.mode)
 
     test_dataset = CounterfactualAudioDataset("data/clotho_eval_metadata.csv") 
     test_loader = DataLoader(test_dataset, batch_size=bs, shuffle=False, num_workers=args.num_workers)

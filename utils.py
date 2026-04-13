@@ -4,9 +4,41 @@ import torch
 import torch.nn as nn
 from torch import Tensor
 import torch.optim as optim
+import torch.nn.functional as F
 from torch.utils.data import DataLoader
 
 from models import AudioTextCounterfactualModel
+
+
+class CLAPLoss(nn.Module):
+    def __init__(self, initial_temperature=0.07):
+        super().__init__()
+        # In standard CLIP/CLAP, the temperature is a learnable parameter
+        # that helps scale the logits before applying Cross Entropy.
+        self.logit_scale = nn.Parameter(torch.ones([]) * np.log(1 / initial_temperature))
+
+    def forward(self, audio_embeds, text_embeds):
+        """
+        audio_embeds: (Batch_Size, 512) - L2 normalized
+        text_embeds:  (Batch_Size, 512) - L2 normalized
+        """
+        # Clamp logit scale to prevent numerical instability
+        logit_scale = torch.clamp(self.logit_scale.exp(), max=100.0)
+
+        # Compute the cosine similarity matrix
+        logits_per_audio = logit_scale * audio_embeds @ text_embeds.t()
+        logits_per_text = logits_per_audio.t()
+
+        # The correct matches are always on the diagonal (0 matches 0, 1 matches 1, etc.)
+        batch_size = audio_embeds.shape[0]
+        labels = torch.arange(batch_size, device=audio_embeds.device)
+
+        # Symmetric Cross-Entropy Loss
+        loss_audio = F.cross_entropy(logits_per_audio, labels)
+        loss_text = F.cross_entropy(logits_per_text, labels)
+
+        # The final loss is the average of both directions
+        return (loss_audio + loss_text) / 2
 
 
 class CounterfactualLoss(nn.Module):
@@ -110,7 +142,8 @@ def evaluate_retrieval(model: AudioTextCounterfactualModel, dataloader: DataLoad
 
 def train(model: AudioTextCounterfactualModel, optimizer: optim.Optimizer,
           scheduler: optim.lr_scheduler.LRScheduler, train_loader: DataLoader,
-          criterion: CounterfactualLoss, start_epoch: int, epochs: int, device: torch.device):
+          criterion: CLAPLoss | CounterfactualLoss, start_epoch: int, epochs: int,
+          device: torch.device, mode = "counterfactual"):
     """Trains the model using the provided DataLoader and loss function.
     Saves checkpoints every 5 epochs and the final model weights at the end.
     """
@@ -127,9 +160,14 @@ def train(model: AudioTextCounterfactualModel, optimizer: optim.Optimizer,
 
             audio_embeds = model.encode_audio(audio)
             factual_embeds = model.encode_text(factual_captions, device)
-            counterfactual_embeds = model.encode_text(counterfactual_captions, device)
 
-            loss, l_angle, l_factual = criterion(audio_embeds, factual_embeds, counterfactual_embeds)
+            if mode == 'counterfactual':
+                # The counterfactual model also needs the counterfactual text
+                counterfactual_embeds = model.encode_text(counterfactual_captions, device)
+                loss, l_angle, l_factual = criterion(audio_embeds, factual_embeds, counterfactual_embeds)
+            else:
+                # The baseline model ignores the counterfactual text entirely
+                loss = criterion(audio_embeds, factual_embeds)
 
             loss.backward()
             torch.nn.utils.clip_grad_norm_(model.audio_encoder.parameters(), max_norm=1.0)
@@ -145,7 +183,7 @@ def train(model: AudioTextCounterfactualModel, optimizer: optim.Optimizer,
                 progress_bar.set_postfix({"Avg Loss": f"{total_loss_epoch/len(train_loader):.4f}"})
 
         if (epoch + 1) % 5 == 0:
-            checkpoint_path = f"models/checkpoint_epoch_{epoch+1}.pth"
+            checkpoint_path = f"models/checkpoint_{mode}_epoch_{epoch+1}.pth"
             torch.save({
                 'epoch': epoch,
                 'model_state_dict': model.audio_encoder.state_dict(),
@@ -154,5 +192,5 @@ def train(model: AudioTextCounterfactualModel, optimizer: optim.Optimizer,
             }, checkpoint_path)
             print(f"Checkpoint saved at '{checkpoint_path}'")
 
-    torch.save(model.audio_encoder.state_dict(), "models/counterfactual_audio_encoder.pth")
+    torch.save(model.audio_encoder.state_dict(), f"models/{mode}_audio_encoder.pth")
     print("Training Finished. Model weights saved.")
