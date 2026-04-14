@@ -52,9 +52,9 @@ if __name__ == "__main__":
 
     model = AudioTextCounterfactualModel(freeze=args.freeze).to(device)
     if args.mode == "baseline":
-        criterion = CounterfactualLoss(margin=0.1, w1=w1, w2=w2).to(device)
-    else:
         criterion = CLAPLoss().to(device)
+    else:
+        criterion = CounterfactualLoss(margin=0.1, w1=w1, w2=w2).to(device)
     optimizer = torch.optim.AdamW(
         list(model.audio_encoder.parameters()) + \
         list(criterion.parameters()),

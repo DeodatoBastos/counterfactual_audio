@@ -172,7 +172,7 @@ def train(model: AudioTextCounterfactualModel, optimizer: optim.Optimizer,
             loss.backward()
             torch.nn.utils.clip_grad_norm_(model.audio_encoder.parameters(), max_norm=1.0)
             optimizer.step()
-            scheduler.step()
+            # scheduler.step()
 
             total_loss_epoch += loss.item()
 
