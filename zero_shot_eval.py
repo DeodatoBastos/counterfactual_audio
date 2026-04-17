@@ -12,19 +12,26 @@ import numpy as np
 from tqdm import tqdm
 from models import AudioTextCounterfactualModel
 
-def load_model_weights(checkpoint_path, device):
-    """Loads weights into the model, handling potential key mismatches."""
-    model = AudioTextCounterfactualModel().to(device)
+def load_model_weights(checkpoint_path, device, audio_encoder_instance):
+    """Load model weights. Handles previous model class."""
     checkpoint = torch.load(checkpoint_path, map_location=device)
-    
-    # Handle state_dict key prefixing if necessary
     state_dict = checkpoint['model_state_dict']
-    if any(k.startswith('base.') for k in state_dict.keys()):
-        state_dict = {k.replace('base.', ''): v for k, v in state_dict.items()}
     
-    model.audio_encoder.load_state_dict(state_dict)
-    model.eval()
-    return model
+    # Load the keys
+    model_keys = audio_encoder_instance.state_dict().keys()
+    ckpt_keys = state_dict.keys()
+    
+    # If the model expects base but it is not present in the checkpoint
+    if any(k.startswith('base.') for k in model_keys) and not any(k.startswith('base.') for k in ckpt_keys):
+        state_dict = {f"base.{k}": v for k, v in state_dict.items()}
+        
+    # If the model does not have base but it is present in the checkpoint
+    elif not any(k.startswith('base.') for k in model_keys) and any(k.startswith('base.') for k in ckpt_keys):
+        state_dict = {k.replace('base.', ''): v for k, v in state_dict.items()}
+
+    audio_encoder_instance.load_state_dict(state_dict, strict=False)
+    audio_encoder_instance.eval()
+    print("Model loaded.")
 
 def preprocess_audio(file_path, target_sr=32000, duration=10):
     """Loads, resamples, and pads/truncates audio to a fixed duration."""
