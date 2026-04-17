@@ -81,6 +81,14 @@ To test the generalized acoustic representations, use the zero-shot evaluation s
 python zero_shot_eval.py
 ```
 
+### 4. Plot qualitative results
+To assess the model's behavior and identify common class confusions, use the qualitative plotting script. It randomly selects a sample from the US8K dataset and generates a probability distribution across the 10 urban sound classes.
+
+
+```bash
+python qualitative_plots.py
+```
+
 ## Ablation Study Insights
 We conducted an ablation study focusing on two main variables:
 1. **Backbone Fine-tuning:** Comparing a fully frozen ResNet-38 backbone against partial fine-tuning (updating the adapter and final two macro-layers).
