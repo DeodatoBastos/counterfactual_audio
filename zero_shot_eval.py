@@ -17,21 +17,17 @@ def load_model_weights(checkpoint_path, device, audio_encoder_instance):
     checkpoint = torch.load(checkpoint_path, map_location=device)
     state_dict = checkpoint['model_state_dict']
     
-    # Load the keys
     model_keys = audio_encoder_instance.state_dict().keys()
     ckpt_keys = state_dict.keys()
     
-    # If the model expects base but it is not present in the checkpoint
+    # Correction des préfixes
     if any(k.startswith('base.') for k in model_keys) and not any(k.startswith('base.') for k in ckpt_keys):
         state_dict = {f"base.{k}": v for k, v in state_dict.items()}
-        
-    # If the model does not have base but it is present in the checkpoint
     elif not any(k.startswith('base.') for k in model_keys) and any(k.startswith('base.') for k in ckpt_keys):
         state_dict = {k.replace('base.', ''): v for k, v in state_dict.items()}
 
     audio_encoder_instance.load_state_dict(state_dict, strict=False)
     audio_encoder_instance.eval()
-    print("Model loaded.")
 
 def preprocess_audio(file_path, target_sr=32000, duration=10):
     """Loads, resamples, and pads/truncates audio to a fixed duration."""
@@ -56,7 +52,8 @@ def preprocess_audio(file_path, target_sr=32000, duration=10):
 
 def run_zero_shot_eval_esc50(checkpoint_path, data_home, device):
     print(f"\n--- Zero-Shot Evaluation: ESC-50 (5-Fold) ---")
-    model = load_model_weights(checkpoint_path, device)
+    model = AudioTextCounterfactualModel().to(device)
+    load_model_weights(checkpoint_path, device, model.audio_encoder)
 
     labels = ["dog", "rooster", "pig", "cow", "frog", "cat", "hen", "insects", "sheep", "crow",
               "rain", "sea_waves", "crackling_fire", "crickets", "chirping_birds", "water_drops",
@@ -102,7 +99,8 @@ def run_zero_shot_eval_esc50(checkpoint_path, data_home, device):
 
 def run_zero_shot_eval_us8k(checkpoint_path, data_home, device):
     print(f"\n--- Zero-Shot Evaluation: UrbanSound8K (10-Fold) ---")
-    model = load_model_weights(checkpoint_path, device)
+    model = AudioTextCounterfactualModel().to(device)
+    load_model_weights(checkpoint_path, device, model.audio_encoder)
 
     labels = ["air conditioner", "car horn", "children playing", "dog bark",
               "drilling", "engine idling", "gunshot", "jackhammer", "siren", "street music"]
