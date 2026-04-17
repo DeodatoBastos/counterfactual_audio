@@ -17,7 +17,7 @@ class CLAPLoss(nn.Module):
         # that helps scale the logits before applying Cross Entropy.
         self.logit_scale = nn.Parameter(torch.ones([]) * np.log(1 / initial_temperature))
 
-    def forward(self, audio_embeds, text_embeds):
+    def forward(self, audio_embeds: Tensor, text_embeds: Tensor):
         """
         audio_embeds: (Batch_Size, 512) - L2 normalized
         text_embeds:  (Batch_Size, 512) - L2 normalized
@@ -59,15 +59,14 @@ class CounterfactualLoss(nn.Module):
 
         # Equation 3 & 4: Angle Loss (Triplet Margin Cosine)
         # Cosine similarity is the dot product of L2 normalized vectors
-        cos_factual: Tensor = torch.sum(audio_embeds * factual_embeds, dim=-1)
-        cos_counterfactual: Tensor = torch.sum(audio_embeds * counterfactual_embeds, dim=-1)
+        cos_factual = torch.sum(audio_embeds * factual_embeds, dim=-1)
+        cos_counterfactual = torch.sum(audio_embeds * counterfactual_embeds, dim=-1)
 
         # Punishes the model if the counterfactual similarity is greater than the factual similarity
         # L_angle = max(0, cos(a, cf) - cos(a, f) + margin)
-        l_angle: Tensor = torch.mean(torch.clamp(cos_counterfactual - cos_factual + self.margin, min=0.0))
+        l_angle = torch.mean(torch.clamp(cos_counterfactual - cos_factual + self.margin, min=0.0))
 
-        # Equation 6: Total Composite Loss
-        total_loss: Tensor = (self.w1 * l_angle) + (self.w2 * l_factual)
+        total_loss = (self.w1 * l_angle) + (self.w2 * l_factual)
 
         return total_loss, l_angle, l_factual
 
@@ -172,7 +171,7 @@ def train(model: AudioTextCounterfactualModel, optimizer: optim.Optimizer,
             loss.backward()
             torch.nn.utils.clip_grad_norm_(model.audio_encoder.parameters(), max_norm=1.0)
             optimizer.step()
-            # scheduler.step()
+            scheduler.step()
 
             total_loss_epoch += loss.item()
 
