@@ -66,6 +66,7 @@ if __name__ == "__main__":
         checkpoint = torch.load(args.checkpoint, map_location=device)
         model.audio_encoder.load_state_dict(checkpoint['model_state_dict'])
         optimizer.load_state_dict(checkpoint['optimizer_state_dict'])
+        scheduler.load_state_dict(checkpoint['scheduler_state_dict'])
         start_epoch = checkpoint['epoch'] + 1
         print(f"Resumed training from epoch {start_epoch + 1}")
     elif args.checkpoint:
